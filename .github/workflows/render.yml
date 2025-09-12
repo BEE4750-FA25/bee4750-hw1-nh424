@@ -1,54 +1,51 @@
-name: Render PDF
+name: Render PDF (Quarto)
+
 on:
   push:
-    paths: '**.ipynb'
+    branches: [ Fall25 ]
+    paths:
+      - '**/*.ipynb'
   workflow_dispatch:
+
+permissions:
+  contents: write
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    permissions:             
-      contents: write        
-      pull-requests: write 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-        with:
-          persist-credentials: false
+      - uses: actions/checkout@v4
 
-      - name: Setup Julia
-        uses: actions/setup-python@v2
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Install Quarto
+      - name: Install Quarto + TinyTeX
         uses: quarto-dev/quarto-actions/setup@v2
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           version: 1.7.31
           tinytex: true
 
-      - name: Install librsvg2
+      - name: Ensure LaTeX packages (common PDF deps)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y librsvg2-bin
+          tlmgr update --self --all
+          tlmgr install latexmk xetex amsmath amsfonts hyperref geometry xcolor fancyvrb upquote microtype parskip fontspec unicode-math \
+                          listings caption float graphics graphics-def grfext kvoptions pdftexcmds iftex etoolbox setspace
 
-      - name: Convert notebooks to PDF
+      - name: Convert notebooks to PDF (recursive)
+        shell: bash
         run: |
-          for file in *.ipynb; do
+          shopt -s globstar nullglob
+          for file in **/*.ipynb; do
+            echo "Rendering: $file"
             quarto render "$file" --to pdf
           done
 
-      - name: Commit
+      - name: Commit PDFs back
         run: |
-          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add *.pdf
-          git commit -m "convert notebook to PDF"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add **/*.pdf
+          git commit -m "convert notebook to PDF" || echo "no pdf changes"
+          git push
 
-      - name: Push
-        uses: ad-m/github-push-action@master
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ github.ref }}
-          force: True
